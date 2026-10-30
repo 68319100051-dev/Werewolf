@@ -1,0 +1,10 @@
+# ตั้งค่าสำหรับเอาขึ้น Render (Blueprint): สร้างเว็บเซอร์วิสฟรี 1 ตัว
+services:
+  - type: web
+    name: werewolf
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true

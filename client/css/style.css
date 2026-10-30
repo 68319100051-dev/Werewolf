@@ -1,0 +1,139 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #07060c;
+  overflow: hidden;
+}
+
+#game {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* มือถือ: ไม่นับแถบที่อยู่ของเบราว์เซอร์ */
+}
+
+canvas {
+  image-rendering: pixelated;
+  touch-action: none; /* กันจอเลื่อน/ซูมตอนกดรัว ๆ */
+}
+
+/* มือถือแนวตั้ง: จอเกมจะเล็กมาก ให้หมุนเป็นแนวนอน */
+#rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #0b0a1a;
+  color: #e8b84a;
+  font-family: "Leelawadee UI", "Tahoma", "Noto Sans Thai", sans-serif;
+  font-size: 18px;
+  text-align: center;
+}
+
+#rotate .phone {
+  width: 36px;
+  height: 60px;
+  border: 4px solid #e8b84a;
+  box-shadow: 0 0 0 2px #120e18;
+  animation: turn 1.6s steps(4) infinite;
+}
+
+@keyframes turn {
+  0%, 30% { transform: rotate(0deg); }
+  70%, 100% { transform: rotate(-90deg); }
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate {
+    display: flex;
+  }
+}
+
+.px-input {
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 6px;
+  font-family: "Leelawadee UI", "Tahoma", sans-serif;
+  font-size: 13px;
+  color: #f2efe8;
+  background: #0f0c15;
+  border: 2px solid #3a2f4a;
+  box-shadow: 0 0 0 1px #120e18, inset 0 2px 0 #07060c;
+  outline: none;
+  border-radius: 0;
+}
+
+.px-input:focus {
+  border-color: #c9a245;
+}
+
+.px-input::placeholder {
+  color: #6a6478;
+}
+
+.px-chat {
+  box-sizing: border-box;
+  width: 200px;
+  height: 200px;
+  overflow-y: auto;
+  padding: 4px 6px;
+  font-family: "Leelawadee UI", "Tahoma", sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #f2efe8;
+  background: #0f0c15;
+  border: 2px solid #3a2f4a;
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: #5a3a22 #0f0c15;
+}
+
+.px-chat .sys {
+  color: #e8b84a;
+  font-style: italic;
+}
+
+.px-chat .me b {
+  color: #7ac870;
+}
+
+.px-chat b {
+  color: #a8c8ff;
+}
+
+.px-chat .ch-ghost {
+  color: #c8b0f0;
+}
+
+.px-chat .ch-ghost b {
+  color: #b090e0;
+}
+
+.px-chat .ch-interrogate b {
+  color: #8ad0ff;
+}
+
+.px-journal {
+  width: 340px;
+  height: 170px;
+}
+
+.px-journal div {
+  margin-bottom: 4px;
+}
+
+.px-journal .j-clue { color: #ffd27a; }
+.px-journal .j-danger { color: #ff8a8a; }
+.px-journal .j-wolf { color: #ff6a6a; }
+.px-journal .j-rumor { color: #c8e0a0; }
+.px-journal .j-role { color: #e8b84a; }
+.px-journal .j-detective { color: #8ad0ff; }
+
+.px-journal .j-match {
+  color: #a89fb8;
+  font-size: 11px;
+  padding-left: 10px;
+}
