@@ -8,7 +8,7 @@ import { MicControl } from '../ui/mic.js';
 import { EmoteBar } from '../ui/emotes.js';
 import { voice } from '../voice.js';
 import { wolfCount, roleSetting, roleMax } from '../ui/guide.js';
-import { Button, Cycler, Toggle, txt, panel, domInput, modal, staggerIn, go, toast, iconButton, COLORS } from '../ui/widgets.js';
+import { Button, Cycler, Toggle, txt, stackBubble, panel, domInput, modal, staggerIn, go, toast, iconButton, COLORS } from '../ui/widgets.js';
 
 async function joinRoom(scene, code, password) {
   const res = await net.call('room:join', { code, password });
@@ -601,10 +601,14 @@ export class Lobby extends Phaser.Scene {
     a.bubble?.destroy();
     const short = text.length > 28 ? text.slice(0, 27) + '…' : text;
     const t = txt(this, 0, 0, short, { size: 11, color: COLORS.ink, shadow: false });
-    const c = this.add.container(a.x, a.y - 78).setDepth(500);
-    const bg = this.add.nineslice(0, 0, 'panel_paper', undefined, Math.max(30, t.width + 14), 22, 8, 8, 8, 8);
-    const tail = this.add.triangle(0, 12, -4, 0, 4, 0, 0, 5, 0xe8d5a8);
+    const w = Math.max(30, t.width + 14);
+    // คนที่นั่งชิดขอบจอ: เลื่อนกล่องคำพูดเข้ามา แต่หางยังชี้ที่ตัวคนพูด
+    const cx = Phaser.Math.Clamp(a.x, w / 2 + 4, 640 - w / 2 - 4);
+    const c = this.add.container(cx, a.y - 78).setDepth(500);
+    const bg = this.add.nineslice(0, 0, 'panel_paper', undefined, w, 22, 8, 8, 8, 8);
+    const tail = this.add.triangle(a.x - cx, 12, -4, 0, 4, 0, 0, 5, 0xe8d5a8);
     c.add([bg, tail, t]);
+    stackBubble(c, w, [...this.actors.values()].map((o) => o.bubble));
     a.bubble = c;
     c.setScale(0);
     this.tweens.add({ targets: c, scale: 1, duration: 200, ease: 'Back.Out' });

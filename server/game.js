@@ -765,13 +765,18 @@ class Game {
   nightActors() {
     const anyDead = [...this.players.values()].some((x) => !x.alive);
     return this.alive().filter((p) => {
-      if (p.role === 'alpha') return this.day > 1 || BALANCE.firstNightKill;
+      if (p.role === 'alpha') return true; // คืนแรกดมกลิ่นหาพวก คืนต่อไปล่า
       if (['seer', 'doctor', 'detective', 'watchman'].includes(p.role)) return true;
       if (p.role === 'priest') return !p.priestUsed && anyDead;
       if (p.role === 'cupid') return !this.lovers;
       if (this.isPack(p)) return true; // ลูกฝูงแอบไปใส่ร้ายคนอื่น
       return false;
     });
+  }
+
+  // คืนแรกจ่าฝูงยังไม่ล่า: ดมกลิ่นหาลูกฝูงแทน
+  alphaSniffs() {
+    return this.day <= 1 && !BALANCE.firstNightKill;
   }
 
   nightAction(p, data) {
@@ -792,7 +797,10 @@ class Game {
         p.priestUsed = true;
       } else {
         if (!t.alive) return;
-        if (p.role === 'alpha') {
+        if (p.role === 'alpha' && this.alphaSniffs()) {
+          if (t === p) return;
+          this.night.sniff = t.id;
+        } else if (p.role === 'alpha') {
           if (t === p) return;
           this.night.kill = t.id;
           for (const w of this.alive().filter((x) => this.isPack(x))) {
@@ -844,7 +852,7 @@ class Game {
       const t = this.players.get(n.watch);
       const visitors = [];
       const alphaNow = this.alpha();
-      if (n.kill === n.watch && alphaNow) visitors.push(alphaNow);
+      if ((n.kill === n.watch || n.sniff === n.watch) && alphaNow) visitors.push(alphaNow);
       if (n.protect === n.watch) visitors.push(this.alive().find((x) => x.role === 'doctor'));
       if (n.see === n.watch) visitors.push(this.alive().find((x) => x.role === 'seer'));
       if (n.interrogate?.[1] === n.watch) visitors.push(this.players.get(n.interrogate[0]));
@@ -867,6 +875,17 @@ class Game {
       }
     }
     const a = this.alpha();
+    // จ่าฝูงดมกลิ่น: รู้ฝ่ายเดียวว่าเป็นลูกฝูงไหม (ลูกฝูงไม่รู้ตัว ถ้ารู้ทั้งคู่ฝูงจะแรงเกินไป)
+    if (a && n.sniff) {
+      const t = this.players.get(n.sniff);
+      if (this.isPack(t)) {
+        a.knownWolves.add(t.id);
+        this.note(a, `คุณแอบดมกลิ่น ${t.name} ได้กลิ่นพวกเดียวกัน! ${t.name} คือหมาป่า (เขายังไม่รู้ว่าคุณคือจ่าฝูง)`, 'wolf');
+        this.record(`จ่าฝูง ${a.name} ดมกลิ่นเจอลูกฝูง ${t.name}`);
+      } else {
+        this.note(a, `คุณแอบดมกลิ่น ${t.name} ไม่ใช่กลิ่นพวกเดียวกัน`, 'info');
+      }
+    }
     if (a && n.kill) {
       const t = this.players.get(n.kill);
       if (this.isWolf(t)) {
@@ -1123,6 +1142,7 @@ class Game {
       if (this.phase === 'night' && me.alive && this.nightActors().includes(me)) {
         v.me.nightAction = {
           role: me.role,
+          mode: me.role === 'alpha' && this.alphaSniffs() ? 'sniff' : undefined,
           done: this.night.done.has(id),
           blocked: me.role === 'doctor' ? me.lastProtect : me.role === 'detective' ? me.lastDetectiveTarget : null,
         };
@@ -1181,7 +1201,8 @@ class Game {
       const acts = this.nightActors().includes(t);
       const frame = n.frames?.find((f) => f.by === tid)?.target;
       const target = { alpha: n.kill, seer: n.see, doctor: n.protect, watchman: n.watch, priest: n.revive, detective: n.interrogate?.[1], cupid: n.lovers, wolf: frame, shadow: frame }[t.role];
-      s.night = { acts, done: n.done.has(tid), target: acts && n.done.has(tid) ? target ?? 'skip' : null };
+      s.night = { acts, done: n.done.has(tid), target: acts && n.done.has(tid) ? target ?? n.sniff ?? 'skip' : null };
+      if (t.role === 'alpha' && this.alphaSniffs()) s.night.mode = 'sniff';
       if (n.interrogate?.includes(tid)) s.night.interrogate = n.interrogate.find((x) => x !== tid);
     }
     if (this.phase === 'vote' || this.phase === 'voteResult') s.vote = this.votes.get(tid) || null;

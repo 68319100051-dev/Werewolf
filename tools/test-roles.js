@@ -194,12 +194,23 @@ const journal = (g, id) => P(g, id).journal.map((j) => j.text).join(' | ');
   check('ฝนตก: ซุ่มในป่าไม่ได้', g.ambushTargets.length === 0);
 }
 
-// คืนแรกหมาป่ายังไม่ล่า
+// คืนแรกหมาป่ายังไม่ล่า แค่ดมกลิ่นหาพวก
 {
-  const g = makeGame({ a: 'alpha', s: 'seer', v: 'villager', x: 'villager' });
+  const g = makeGame({ a: 'alpha', s: 'seer', w: 'wolf', v: 'villager', x: 'villager' });
   g.day = 1;
   g.startNight();
-  check('คืนแรก: จ่าฝูงยังไม่ออกล่า แต่หมอดูใช้พลังได้', !g.nightActors().some((p) => p.id === 'a') && g.nightActors().some((p) => p.id === 's'));
+  g.phase = 'night';
+  check('คืนแรก: จ่าฝูงได้ดมกลิ่นแทนการล่า', g.view('a').me.nightAction?.mode === 'sniff');
+  g.nightAction(P(g, 'a'), 'w');
+  g.nightAction(P(g, 'a'), 'v');
+  g.resolveNight();
+  check('คืนแรก: ดมกลิ่นไม่ฆ่าใคร', [...g.players.values()].every((p) => p.alive));
+  check('คืนแรก: ดมเจอลูกฝูง จ่าฝูงรู้ฝ่ายเดียว', P(g, 'a').knownWolves.has('w') && !P(g, 'w').knownWolves.has('a'));
+  g.startNight();
+  g.phase = 'night';
+  g.nightAction(P(g, 'a'), 'v');
+  g.resolveNight();
+  check('คืนแรก: ดมคนธรรมดา จ่าฝูงรู้ว่าไม่ใช่พวก', journal(g, 'a').includes('ไม่ใช่กลิ่นพวกเดียวกัน') && P(g, 'v').alive);
   g.day = 2;
   check('คืนที่ 2: จ่าฝูงออกล่าได้', g.nightActors().some((p) => p.id === 'a'));
 }

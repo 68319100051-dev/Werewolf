@@ -5,7 +5,7 @@ import { LOCATIONS, ROLES, TEAM_COLOR, EVENTS } from '../data.js';
 import { addCharacter, outfitKey, setCharacterOutfit, OUTFIT_PARTS, PART_LABELS } from '../art/character.js';
 import { buildSquare, buildFire, SEATS } from '../art/sets.js';
 import { Actor } from '../ui/actors.js';
-import { Button, Cycler, txt, panel, domInput, modal, go, toast, iconButton, COLORS } from '../ui/widgets.js';
+import { Button, Cycler, txt, fitText, stackBubble, panel, domInput, modal, go, toast, iconButton, COLORS } from '../ui/widgets.js';
 import { dealHand, makeDeck, Card } from '../ui/card.js';
 import { startMinigame, ensureTextures as ensureMinigameTextures } from '../ui/minigames.js';
 import { startNightGame } from '../ui/minigames2.js';
@@ -68,6 +68,8 @@ export class Game extends Phaser.Scene {
     this.chaseUI = null;
     this.hand = null;
     this.ui = {};
+    this.modalsOpen = 0;
+    this.onModalClosed = () => this.state && this.updateChat(this.state);
 
     this.buildWorld();
     this.actorLayer = this.add.container(0, 0).setDepth(30).setVisible(false);
@@ -358,7 +360,8 @@ export class Game extends Phaser.Scene {
   }
 
   setChatVisible(on, canType = true) {
-    if (this.cinema) on = false; // แชทเป็น HTML ลอยทับจอ ต้องซ่อนตอนเล่นคัตซีนเต็มจอ
+    // แชทเป็น HTML ลอยทับจอ ต้องซ่อนตอนเล่นคัตซีนเต็มจอ และตอนมีป๊อปอัปเปิดอยู่ (เช่น สมุดบันทึก)
+    if (this.cinema || this.modalsOpen > 0) on = false;
     this.chatBox.setVisible(on);
     this.chatDom.setVisible(on);
     this.chatInputDom.setVisible(on && canType);
@@ -414,8 +417,13 @@ export class Game extends Phaser.Scene {
     a.bubble?.destroy();
     const short = text.length > 26 ? text.slice(0, 25) + '…' : text;
     const t = txt(this, 0, 0, short, { size: 11, color: COLORS.ink, shadow: false });
-    const c = this.add.container(a.x, a.y - 78).setDepth(140);
-    c.add([this.add.nineslice(0, 0, 'panel_paper', undefined, Math.max(30, t.width + 14), 22, 8, 8, 8, 8), this.add.triangle(0, 12, -4, 0, 4, 0, 0, 5, 0xe8d5a8), t]);
+    const w = Math.max(30, t.width + 14);
+    // ไม่ให้ล้นจอ และไม่ให้มุดใต้กล่องแชท (แชทเป็น HTML ทับแคนวาสอยู่ทางขวา)
+    const right = this.chatBox.visible ? 404 : 636;
+    const cx = Phaser.Math.Clamp(a.x, w / 2 + 4, right - w / 2);
+    const c = this.add.container(cx, a.y - 78).setDepth(140);
+    c.add([this.add.nineslice(0, 0, 'panel_paper', undefined, w, 22, 8, 8, 8, 8), this.add.triangle(a.x - cx, 12, -4, 0, 4, 0, 0, 5, 0xe8d5a8), t]);
+    stackBubble(c, w, [...this.actors.values()].map((o) => o.bubble));
     a.bubble = c;
     c.setScale(0);
     this.tweens.add({ targets: c, scale: 1, duration: 200, ease: 'Back.Out' });
@@ -1157,9 +1165,10 @@ export class Game extends Phaser.Scene {
     const figs = {};
     ids.forEach((id, i) => {
       const p = v.players.find((x) => x.id === id);
-      const x = 320 + (i - (ids.length - 1) / 2) * Math.min(48, 280 / ids.length);
-      const s = addCharacter(this, x, 274, p.outfit, 3);
-      const n = txt(this, x, 284, p.name, { size: 10, color: id === net.me ? COLORS.gold : COLORS.text });
+      const gap = Math.min(48, 380 / ids.length);
+      const x = 320 + (i - (ids.length - 1) / 2) * gap;
+      const s = addCharacter(this, x, 266, p.outfit, 3);
+      const n = fitText(txt(this, x, 276, p.name, { size: 10, color: id === net.me ? COLORS.gold : COLORS.text }), Math.max(gap, 46));
       this.phaseLayer.add([s, n]);
       s.alpha = 0;
       s.x -= 30;
@@ -1315,7 +1324,6 @@ export class Game extends Phaser.Scene {
     }
     if (!na) {
       this.sleepScene(me);
-      if (me.role === 'alpha' && v.day === 1) this.later(1800, () => this.note('คืนแรก ฝูงหมาป่ายังไม่ออกล่า... พรุ่งนี้ค่อยเริ่ม', 64, COLORS.red, 12));
       return;
     }
     if (na.done) {
@@ -1334,6 +1342,10 @@ export class Game extends Phaser.Scene {
       wolf: ['คืนนี้จะแอบไปใส่ร้ายใคร?', this.others(v), { skip: 'ไม่ออกไป' }],
       shadow: ['คืนนี้จะแอบไปใส่ร้ายใคร?', this.others(v), { skip: 'ไม่ออกไป' }],
     };
+    if (na.mode === 'sniff') {
+      prompts.alpha = ['ดมกลิ่นหาพวก: แอบไปดมใคร?', this.others(v)];
+      this.later(1700, () => this.note('คืนแรกฝูงยังไม่ออกล่า: แอบดมกลิ่น 1 คน จะรู้ว่าเป็นหมาป่าพวกเดียวกันไหม (ระวังคนเฝ้ายาม)', 52, COLORS.red, 13));
+    }
     const [title, list, extra = {}] = prompts[na.role];
     this.later(1600, () => {
       const box = this.picker(title, list, (id) => {
@@ -1347,7 +1359,7 @@ export class Game extends Phaser.Scene {
           return;
         }
         if (id !== null) ({ seer: sfx.orb, doctor: sfx.heal, detective: sfx.knock, cupid: sfx.arrow, priest: sfx.revive, alpha: sfx.growl, watchman: sfx.step })[na.role]?.();
-        const msg = { detective: 'คุยกับเขาในแชทด้านขวาได้เลย', cupid: 'ลูกศรรักถูกยิงออกไปแล้ว...' }[na.role] || 'เรียบร้อย... รอรุ่งเช้า';
+        const msg = na.mode === 'sniff' ? 'แอบไปดมกลิ่นแล้ว... เช้านี้จะรู้ว่าเป็นพวกเดียวกันไหม' : { detective: 'คุยกับเขาในแชทด้านขวาได้เลย', cupid: 'ลูกศรรักถูกยิงออกไปแล้ว...' }[na.role] || 'เรียบร้อย... รอรุ่งเช้า';
         this.later(500, () => this.note(msg, 330, COLORS.dim));
       }, { blocked: na.blocked, marks, ...extra });
     });
@@ -1719,7 +1731,7 @@ export class Game extends Phaser.Scene {
       if (n.interrogate) return `สอบปากคำลับกับ ${name(n.interrogate)}`;
       if (!n.acts) return 'นอนหลับอยู่...';
       if (!n.done) return 'กำลังคิดว่าคืนนี้จะทำอะไร...';
-      return this.nightVerb(s.role, n.target, name);
+      return this.nightVerb(n.mode === 'sniff' ? 'sniff' : s.role, n.target, name);
     }
     if (ph === 'vote' || ph === 'voteResult') return s.vote ? (s.vote === 'skip' ? 'งดออกเสียง' : `โหวต ${name(s.vote)}`) : 'ยังไม่โหวต';
     if (ph === 'meeting') return 'อยู่ในที่ประชุม';
@@ -1729,7 +1741,7 @@ export class Game extends Phaser.Scene {
   nightVerb(role, target, name) {
     if (target == null || target === 'skip') return 'ไม่ใช้พลังคืนนี้';
     const who = Array.isArray(target) ? target.map(name).join(' กับ ') : name(target);
-    const verb = { alpha: 'คืนนี้จะล่า', seer: 'ส่องลูกแก้วดู', doctor: 'ปกป้อง', detective: 'เรียกสอบปากคำ', watchman: 'เฝ้าบ้าน', priest: 'ชุบชีวิต', cupid: 'ผูกคู่รัก', wolf: 'แอบไปใส่ร้าย', shadow: 'แอบไปใส่ร้าย' }[role] || 'เลือก';
+    const verb = { alpha: 'คืนนี้จะล่า', seer: 'ส่องลูกแก้วดู', doctor: 'ปกป้อง', detective: 'เรียกสอบปากคำ', watchman: 'เฝ้าบ้าน', priest: 'ชุบชีวิต', cupid: 'ผูกคู่รัก', wolf: 'แอบไปใส่ร้าย', shadow: 'แอบไปใส่ร้าย', sniff: 'แอบดมกลิ่น' }[role] || 'เลือก';
     return `${verb} ${who}`;
   }
 
@@ -1835,21 +1847,28 @@ export class Game extends Phaser.Scene {
     const me = this.state?.me;
     if (!me) return;
     const role = ROLES[me.role];
+    // วัดความสูงข้อความก่อน แล้วขยายป๊อปอัปให้พอดี (คำอธิบายบางอาชีพยาวหลายบรรทัด)
+    const desc = txt(this, 0, 0, role.desc, { size: 11, wrap: 196, origin: [0, 0], align: 'left' });
+    const goal = txt(this, 0, 0, 'เป้าหมาย: ' + role.goal, { size: 11, color: COLORS.gold, wrap: 280 });
+    const descH = Math.max(desc.height, 56);
+    const h = Math.max(200, 64 + descH + 8 + goal.height + 44);
+    const top = -h / 2;
     modal(this, {
       title: 'บทบาทของคุณ',
-      w: 300,
-      h: 200,
+      w: 320,
+      h,
       build: (m) => {
         m.box.setDepth(950);
-        m.box.add(this.add.image(-110, -20, role.icon).setScale(4));
-        m.box.add(txt(this, 20, -50, role.name, { size: 18, color: TEAM_COLOR[role.team], bold: true }));
-        m.box.add(txt(this, 20, -6, role.desc, { size: 11, wrap: 180 }));
-        m.box.add(txt(this, 0, 52, 'เป้าหมาย: ' + role.goal, { size: 11, color: COLORS.gold, wrap: 270 }));
-        m.box.add(new Button(this, -50, 80, 'อาชีพทั้งหมด', { w: 110, h: 22, size: 11, color: 'btn', onClick: () => {
+        m.box.add(this.add.image(-118, top + 78, role.icon).setScale(4));
+        m.box.add(txt(this, -82, top + 50, role.name, { size: 18, color: TEAM_COLOR[role.team], bold: true, origin: [0, 0.5] }));
+        desc.setPosition(-82, top + 64);
+        goal.setPosition(0, top + 64 + descH + 8).setOrigin(0.5, 0);
+        m.box.add([desc, goal]);
+        m.box.add(new Button(this, -50, h / 2 - 20, 'อาชีพทั้งหมด', { w: 110, h: 22, size: 11, color: 'btn', onClick: () => {
           m.close();
           this.openGuide();
         } }));
-        m.box.add(new Button(this, 60, 80, 'ปิด', { w: 80, h: 22, size: 11, color: 'btn_dark', onClick: () => m.close() }));
+        m.box.add(new Button(this, 60, h / 2 - 20, 'ปิด', { w: 80, h: 22, size: 11, color: 'btn_dark', onClick: () => m.close() }));
       },
     });
   }

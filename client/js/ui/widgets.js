@@ -29,6 +29,24 @@ export function txt(scene, x, y, str, opts = {}) {
   return t;
 }
 
+// ตัดข้อความบรรทัดเดียวให้กว้างไม่เกิน maxW (ต่อท้ายด้วย …) เช่น ชื่อยาว ๆ ใต้ตัวละคร
+export function fitText(t, maxW) {
+  const full = t.text;
+  let n = full.length;
+  while (t.width > maxW && n > 2) t.setText(full.slice(0, --n) + '…');
+  return t;
+}
+
+// กล่องคำพูดเหนือหัว: ถ้าทับกล่องของคนข้าง ๆ ให้ดันขึ้นไปเรื่อย ๆ
+export function stackBubble(c, w, others) {
+  c.bw = w;
+  for (let k = 0; k < 5; k++) {
+    const hit = others.some((o) => o !== c && o?.active && Math.abs(o.x - c.x) < (w + o.bw) / 2 + 2 && Math.abs(o.y - c.y) < 24);
+    if (!hit) break;
+    c.y -= 24;
+  }
+}
+
 export function panel(scene, x, y, w, h, tex = 'panel') {
   return scene.add.nineslice(x, y, tex, undefined, w, h, 8, 8, 8, 8);
 }
@@ -217,6 +235,8 @@ export function modal(scene, { title, w = 280, h = 150, build }) {
   // ซ่อนช่องพิมพ์/แชทของหน้าเดิมไว้ เพราะ HTML จะลอยทับป๊อปอัปเสมอ
   const hidden = scene.children.list.filter((o) => o instanceof Phaser.GameObjects.DOMElement && o.visible);
   hidden.forEach((d) => d.setVisible(false));
+  // นับป๊อปอัปที่เปิดอยู่ ให้หน้าที่เปิดแชทเองตามเฟส (หน้าเกม) รู้ว่าต้องรอก่อน
+  scene.modalsOpen = (scene.modalsOpen || 0) + 1;
   const api = {
     box,
     addDom(d) {
@@ -227,7 +247,9 @@ export function modal(scene, { title, w = 280, h = 150, build }) {
     close() {
       sfx.back();
       doms.forEach((d) => d.destroy());
+      scene.modalsOpen = Math.max(0, scene.modalsOpen - 1);
       hidden.forEach((d) => d.active && d.setVisible(true));
+      scene.onModalClosed?.();
       scene.tweens.add({ targets: box, scale: 0.85, alpha: 0, duration: 120, onComplete: () => box.destroy() });
       scene.tweens.add({ targets: overlay, alpha: 0, duration: 140, onComplete: () => overlay.destroy() });
     },

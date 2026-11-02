@@ -1,6 +1,6 @@
 // ตัวละครในลานหมู่บ้าน + ป้ายชื่อใต้เท้า (ไอคอนอาชีพ ชื่อ หัวใจ อยู่แถวเดียวกัน ไม่ทับหัวใคร)
 import { addCharacter, ensureCharacter, outfitKey } from '../art/character.js';
-import { txt, COLORS } from './widgets.js';
+import { txt, fitText, COLORS } from './widgets.js';
 import { sfx } from '../sfx.js';
 
 export class Actor {
@@ -24,7 +24,8 @@ export class Actor {
     this.plateBg = scene.add.rectangle(0, 0, 10, 13, 0x0b0a1a, 0.62);
     this.roleIcon = scene.add.image(0, 0, 'r_villager').setVisible(false);
     this.crown = scene.add.image(0, 0, 'i_crown').setVisible(false);
-    this.name = txt(scene, 0, 0, p.name, { size: 10, color: isMe ? COLORS.gold : COLORS.text });
+    this.name = fitText(txt(scene, 0, 0, p.name, { size: 10, color: isMe ? COLORS.gold : COLORS.text }), 70);
+    this.fullName = p.name;
     this.hearts = [0, 1].map(() => scene.add.image(0, 0, 'i_heart').setScale(0.75).setVisible(false));
     this.check = scene.add.image(0, 0, 'i_check').setVisible(false);
     this.plate.add([this.plateBg, this.roleIcon, this.crown, this.name, ...this.hearts, this.check]);
@@ -65,11 +66,20 @@ export class Actor {
       x += w + gap;
     }
     this.plateBg.width = total + 8;
+    this.fitPlate();
+  }
+
+  // ป้ายชื่อของคนที่นั่งชิดขอบจอ: เลื่อนเข้ามาไม่ให้ล้นจอ
+  fitPlate() {
+    const half = this.plateBg.width / 2 + 2;
+    this.plate.x = Phaser.Math.Clamp(this.x ?? this.plate.x, half, 640 - half);
   }
 
   setName(name) {
-    if (this.name.text !== name) {
-      this.name.setText(name);
+    if (this.fullName !== name) {
+      this.fullName = name;
+      // ชื่อยาวมาก ๆ ตัดให้ป้ายไม่ชนป้ายของคนข้าง ๆ
+      fitText(this.name.setText(name), 70);
       this.layout();
     }
   }
@@ -173,6 +183,7 @@ export class Actor {
     this.sprite.setPosition(x, y);
     this.tomb.setPosition(x, y);
     this.plate.setPosition(x, y + 9);
+    this.fitPlate();
     this.badge.setPosition(x, y - 70);
     this.mine.setPosition(x, y - 90);
     this.setDepthY(y);

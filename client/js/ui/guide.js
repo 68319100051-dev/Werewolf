@@ -92,8 +92,18 @@ function rolesPage(scene, page, possible, focus) {
     detail.add(txt(scene, 20, -86, r.name, { size: 17, color: TEAM_COLOR[r.team], bold: true, origin: [0, 0.5] }));
     detail.add(txt(scene, 20, -62, TEAM_NAME[r.team], { size: 11, color: COLORS.dim, origin: [0, 0.5] }));
     if (off) detail.add(txt(scene, 20, -42, 'ไม่มีในเกมนี้', { size: 10, color: COLORS.red, origin: [0, 0.5] }));
-    detail.add(txt(scene, -112, -20, r.desc, { size: 11, wrap: 224, origin: [0, 0], align: 'left' }));
-    detail.add(txt(scene, -112, 58, 'เป้าหมาย: ' + r.goal, { size: 11, wrap: 224, color: COLORS.gold, origin: [0, 0], align: 'left' }));
+    // เป้าหมายต่อท้ายคำอธิบายเสมอ ถ้ายาวเกินกรอบให้ตัวอักษรเล็กลง
+    for (let size = 11; size >= 9; size--) {
+      const d = txt(scene, -112, -20, r.desc, { size, wrap: 224, origin: [0, 0], align: 'left' });
+      const g = txt(scene, -112, 0, 'เป้าหมาย: ' + r.goal, { size, wrap: 224, color: COLORS.gold, origin: [0, 0], align: 'left' });
+      g.y = Math.max(d.y + d.height + 4, 40);
+      if (g.y + g.height <= 114 || size === 9) {
+        detail.add([d, g]);
+        break;
+      }
+      d.destroy();
+      g.destroy();
+    }
     cells.forEach((c) => c.ring.setVisible(c.key === key));
   };
   let y = -90;
