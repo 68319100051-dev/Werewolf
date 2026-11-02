@@ -8,6 +8,7 @@ import { MicControl } from '../ui/mic.js';
 import { EmoteBar } from '../ui/emotes.js';
 import { voice } from '../voice.js';
 import { wolfCount, roleSetting, roleMax } from '../ui/guide.js';
+import { openScores } from '../ui/scores.js';
 import { Button, Cycler, Toggle, txt, stackBubble, panel, domInput, modal, staggerIn, go, toast, iconButton, COLORS } from '../ui/widgets.js';
 
 async function joinRoom(scene, code, password) {
@@ -339,7 +340,9 @@ export class Lobby extends Phaser.Scene {
     this.codeText = txt(this, 470, 22, '', { size: 14, origin: [1, 0.5] });
     iconButton(this, 492, 22, 'i_copy', () => this.copyInvite());
     this.countText = txt(this, 520, 22, '', { size: 13, origin: [0, 0.5] });
-    this.summary = txt(this, 166, 50, '', { size: 11, color: COLORS.dim });
+    this.summary = txt(this, 176, 50, '', { size: 11, color: COLORS.dim });
+    // ตารางคะแนนสะสม (โชว์เมื่อห้องนี้เล่นจบไปแล้วอย่างน้อย 1 ตา)
+    this.scoreBtn = iconButton(this, 20, 50, 'i_crown', () => openScores(this, net.room?.stats, net.me)).setVisible(false);
     this.botBtn = new Button(this, 362, 50, 'เพิ่มบอท', { w: 80, h: 22, size: 11, icon: 'i_plus', onClick: () => this.addBot() });
 
     // ลานหมู่บ้านกลางคืน กองไฟอยู่ตรงกลาง
@@ -418,7 +421,9 @@ export class Lobby extends Phaser.Scene {
     this.countText.setText(`${room.players.length}/${s.maxPlayers} คน`);
     const voice = { both: 'ไมค์ + พิมพ์', text: 'พิมพ์อย่างเดียว', voice: 'ไมค์อย่างเดียว' }[s.voiceMode];
     const wolves = wolfCount(Math.max(4, room.players.length), s.wolves, s.roles);
-    this.summary.setText(`หมาป่า ${wolves} ตัว · ประชุม ${SECS(s.meetingTime)} · ${voice}${room.isPublic ? '' : ' · ห้องซ่อน'}`);
+    const games = room.stats?.games || 0;
+    this.scoreBtn.setVisible(games > 0);
+    this.summary.setText(`หมาป่า ${wolves} ตัว · ประชุม ${SECS(s.meetingTime)} · ${voice}${room.isPublic ? '' : ' · ห้องซ่อน'}${games ? ` · เล่นไปแล้ว ${games} ตา` : ''}`);
 
     const host = net.isHost;
     this.readyBtn.setVisible(!host);

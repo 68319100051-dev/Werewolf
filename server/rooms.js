@@ -1,5 +1,25 @@
 // ระบบห้อง: สร้าง / เข้า / ออก / ตั้งค่า / แชท / หลุดแล้วกลับเข้า / เริ่มเกม
-const { Game, roleSetting } = require('./game');
+const { Game, roleSetting, ROLES } = require('./game');
+
+// จบเกมแล้วทุกคนกด "เล่นต่อ" ครบ: นับถอยหลังแล้วเริ่มตาใหม่เอง (เร่งได้ตอนทดสอบ)
+const REMATCH_MS = 5000 / Number(process.env.GAME_SPEED || 1);
+
+// ตารางคะแนนสะสมของห้อง: ชนะ +3 รอดถึงจบ +1
+function recordScores(room) {
+  const g = room.game;
+  if (!g || g.scored) return;
+  g.scored = true;
+  room.stats ||= { games: 0, players: {} };
+  room.stats.games++;
+  for (const p of g.players.values()) {
+    const won = g.winner === 'jester' ? p.role === 'jester' : ROLES[p.role].team === g.winner;
+    const s = (room.stats.players[p.id] ||= { name: p.name, games: 0, wins: 0, points: 0 });
+    s.name = p.name;
+    s.games++;
+    if (won) s.wins++;
+    s.points += (won ? 3 : 0) + (p.alive ? 1 : 0);
+  }
+}
 const { voicePlan } = require('./voice');
 const { Bot, botProfile } = require('./bots');
 const RECONNECT_GRACE_MS = 60_000;
@@ -80,6 +100,8 @@ function publicRoom(room) {
       return { id, name: p.name, outfit: p.outfit, ready: p.ready, connected: p.connected, isBot: !!p.isBot };
     }),
     chat: room.chat.slice(-50),
+    stats: room.stats || null,
+    rematchAt: room.rematchAt || null,
   };
 }
 
@@ -158,6 +180,7 @@ function attach(io) {
 
   // ลบห้องทิ้ง พร้อมหยุดบอททุกตัว
   function closeRoom(room) {
+    clearTimeout(room.rematchTimer);
     room.game?.destroy();
     for (const id of room.order) {
       const info = players.get(id);
@@ -206,8 +229,55 @@ function attach(io) {
       }
       systemMessage(room, reason === 'kick' ? `${member.name} ถูกเชิญออกจากห้อง` : `${member.name} ออกจากห้อง`);
       broadcastRoom(room);
+      checkRematch(room);
     }
     broadcastList();
+  }
+
+  // เริ่มเกม (ทั้งจากห้องรอ และเล่นต่อจากหน้าจบเกม)
+  function startGame(room) {
+    clearTimeout(room.rematchTimer);
+    room.rematchAt = null;
+    room.game?.destroy();
+    room.status = 'playing';
+    room.game = new Game(room, {
+      send: sendTo,
+      onEnd: () => {
+        recordScores(room);
+        // ให้ทุกคน (ยกเว้นบอท) กด "เล่นต่อ" ใหม่
+        for (const m of room.members.values()) m.ready = !!m.isBot;
+        broadcastRoom(room);
+        broadcastList();
+      },
+      onSync: () => syncVoice(room),
+    });
+    broadcastRoom(room);
+    broadcastList();
+    room.game.start();
+  }
+
+  function checkRematch(room) {
+    if (room.game?.phase !== 'ended') return;
+    const people = room.order.map((id) => room.members.get(id));
+    const all = room.order.length >= 4 && people.every((m) => m.isBot || (m.ready && m.connected));
+    if (!all) {
+      if (room.rematchAt) {
+        clearTimeout(room.rematchTimer);
+        room.rematchAt = null;
+        broadcastRoom(room);
+      }
+      return;
+    }
+    if (room.rematchAt) return;
+    room.rematchAt = Date.now() + REMATCH_MS;
+    broadcastRoom(room);
+    room.rematchTimer = setTimeout(() => {
+      room.rematchAt = null;
+      if (rooms.get(room.code) === room && room.game?.phase === 'ended') {
+        systemMessage(room, `เริ่มตาที่ ${(room.stats?.games || 0) + 1}!`);
+        startGame(room);
+      }
+    }, REMATCH_MS);
   }
 
   function joinRoom(socket, room, playerId) {
@@ -419,15 +489,7 @@ function attach(io) {
       if (room.order.some((id) => !room.members.get(id).connected)) {
         return ack?.({ ok: false, error: 'มีผู้เล่นหลุดอยู่ รอให้กลับมาก่อน' });
       }
-      room.status = 'playing';
-      room.game = new Game(room, {
-        send: sendTo,
-        onEnd: () => broadcastList(),
-        onSync: () => syncVoice(room),
-      });
-      broadcastRoom(room);
-      broadcastList();
-      room.game.start();
+      startGame(room);
       ack?.({ ok: true });
     });
 
@@ -460,9 +522,20 @@ function attach(io) {
     });
 
     // จบเกมแล้ว เจ้าของห้องพาทุกคนกลับห้องรอ
+    // หน้าจบเกม: กด "เล่นต่อ" (กดซ้ำ = ยกเลิก)
+    socket.on('game:again', (on) => {
+      const room = myRoom();
+      if (room?.game?.phase !== 'ended') return;
+      room.members.get(playerId).ready = on !== false;
+      broadcastRoom(room);
+      checkRematch(room);
+    });
+
     socket.on('game:lobby', () => {
       const room = myRoom();
       if (!isHost(room) || room.game?.phase !== 'ended') return;
+      clearTimeout(room.rematchTimer);
+      room.rematchAt = null;
       room.game.destroy();
       room.game = null;
       room.status = 'lobby';
@@ -481,6 +554,7 @@ function attach(io) {
       const m = room.members.get(playerId);
       m.connected = false;
       broadcastRoom(room);
+      checkRematch(room);
       const id = playerId;
       m.dropTimer = setTimeout(() => removeFromRoom(id), room.status === 'playing' ? RECONNECT_GRACE_MS * 3 : RECONNECT_GRACE_MS);
     });

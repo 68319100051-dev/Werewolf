@@ -67,6 +67,26 @@ function client(id) {
   const botActs = host.game?.log?.length || 0;
   check('มีเหตุการณ์ในเกม', botActs > 2, `${botActs} รายการ`);
 
+  // คะแนนสะสม + เล่นต่อจากหน้าจบเกม
+  await wait(300);
+  const st1 = host.room?.stats;
+  check('จบเกมแล้วห้องบันทึกคะแนน', st1?.games === 1 && Object.values(st1.players).every((p) => p.games === 1), JSON.stringify(st1?.players?.h1 || {}));
+  check('จบเกมแล้วคนต้องกดเล่นต่อใหม่ บอทพร้อมเอง', !host.room.players.find((p) => p.id === 'h1').ready && host.room.players.filter((p) => p.isBot).every((b) => b.ready));
+  host.emit('game:again');
+  await wait(150);
+  check('ทุกคนกดเล่นต่อครบ เริ่มนับถอยหลัง', !!host.room.rematchAt);
+  const t2 = Date.now();
+  while (Date.now() - t2 < 5000 && host.game?.phase === 'ended') await wait(100);
+  check('นับถอยหลังจบ เริ่มตาใหม่เองโดยไม่ต้องกลับห้องรอ', host.game?.phase !== 'ended' && host.room.status === 'playing');
+  while (Date.now() - t2 < 90000 && host.game?.phase !== 'ended') await wait(200);
+  await wait(300);
+  check('ตาที่สองจบ คะแนนสะสมเป็น 2 ตา', host.room?.stats?.games === 2);
+  host.emit('game:again');
+  await wait(50);
+  host.emit('game:again', false);
+  await wait(400);
+  check('กดยกเลิกเล่นต่อ หยุดนับถอยหลัง', !host.room.rematchAt && host.game?.phase === 'ended');
+
   host.emit('game:lobby');
   await wait(300);
   check('กลับห้องรอแล้วบอทยังพร้อมอยู่', host.room?.status === 'lobby' && host.room.players.filter((p) => p.isBot).every((b) => b.ready));

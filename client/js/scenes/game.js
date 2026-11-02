@@ -16,6 +16,7 @@ import { voice } from '../voice.js';
 import { Chase, ensureChaseTextures } from '../ui/chase.js';
 import { music } from '../music.js';
 import { openGuide, possibleRoles } from '../ui/guide.js';
+import { scoreBoard } from '../ui/scores.js';
 import { playDeath } from '../ui/death.js';
 
 const PHASE_NAME = {
@@ -86,7 +87,7 @@ export class Game extends Phaser.Scene {
       if (room.status === 'lobby' && !this.leaving) {
         this.leaving = true;
         go(this, 'Lobby');
-      }
+      } else this.refreshEnded(room);
     };
     const onKicked = () => {
       if (this.leaving) return;
@@ -459,7 +460,10 @@ export class Game extends Phaser.Scene {
       a.setConnected(p.connected);
       a.setOutfit(p.outfit);
       a.setRole(p.role ? ROLES[p.role].icon : null);
-      a.setCheck(v.phase === 'meeting' && (v.meetingReady || []).includes(p.id));
+      a.setCheck(
+        (v.phase === 'meeting' && (v.meetingReady || []).includes(p.id)) ||
+          (v.phase === 'ended' && !!net.room?.players.find((x) => x.id === p.id)?.ready),
+      );
       a.setMark(v.me?.lover && (p.id === v.me.lover || p.id === net.me) ? 'i_heart' : null);
       if (p.alive && !a.alive) a.revive();
     }
@@ -489,6 +493,14 @@ export class Game extends Phaser.Scene {
 
   // ---------- ตัวจัดการเฟส ----------
   onState(v) {
+    // เล่นต่อจากหน้าจบเกม: ตาใหม่เริ่มแล้ว เปิดหน้าเกมใหม่ทั้งหน้า (ตัวละคร บทบาท ล้างของตาก่อน)
+    if (this.state?.phase === 'ended' && v.phase !== 'ended') {
+      if (!this.leaving) {
+        this.leaving = true;
+        go(this, 'Game');
+      }
+      return;
+    }
     this.state = v;
     if (v.shot && v.shot.at !== this.shotSeen) {
       const first = this.shotSeen === undefined && v.phase !== 'hunter' && this.phaseKey === null;
@@ -1606,12 +1618,46 @@ export class Game extends Phaser.Scene {
     // ลำดับเหตุการณ์ทั้งเกม
     this.chatSys('— สรุปเหตุการณ์ —');
     (v.log || []).forEach((l) => this.chatSys(`วันที่ ${l.day}: ${l.text}`));
-    if (net.isHost) {
-      this.phaseLayer.add(new Button(this, 130, 334, 'กลับห้องรอ', { w: 140, color: 'btn_green', icon: 'i_play', onClick: () => net.socket.emit('game:lobby') }));
+    // เล่นต่อ: ทุกคนกดพร้อมครบ เซิร์ฟเวอร์นับถอยหลังแล้วเริ่มตาใหม่เอง ไม่ต้องกลับห้องรอ
+    this.ui.again = new Button(this, 74, 334, 'เล่นต่อ', { w: 124, color: 'btn_green', icon: 'i_play', onClick: () => {
+      const me = net.room?.players.find((p) => p.id === net.me);
+      net.socket.emit('game:again', !me?.ready);
+    } });
+    this.phaseLayer.add(this.ui.again);
+    if (net.isHost) this.phaseLayer.add(new Button(this, 204, 334, 'กลับห้องรอ', { w: 124, color: 'btn_dark', onClick: () => net.socket.emit('game:lobby') }));
+    this.phaseLayer.add(new Button(this, net.isHost ? 320 : 204, 334, 'ออก', { w: 96, color: 'btn_red', icon: 'i_door', onClick: () => this.leave() }));
+    this.ui.againNote = this.note('', 306, COLORS.dim, 12);
+    this.later(2600, () => {
+      if (!net.room?.stats) return;
+      this.ui.scores = scoreBoard(this, this.cx, 214, net.room.stats, net.me);
+      this.phaseLayer.add(this.ui.scores);
+      this.ui.scores.setAlpha(0);
+      this.tweens.add({ targets: this.ui.scores, alpha: 1, duration: 300 });
+    });
+    this.refreshEnded(net.room);
+  }
+
+  // หน้าจบเกม: เครื่องหมายถูกเหนือคนที่กดเล่นต่อ ปุ่ม และนับถอยหลัง
+  refreshEnded(room) {
+    if (!room || this.state?.phase !== 'ended' || !this.ui.again) return;
+    const ready = new Set(room.players.filter((p) => p.ready).map((p) => p.id));
+    for (const a of this.actors.values()) a.setCheck(ready.has(a.id));
+    const humans = room.players.filter((p) => !p.isBot);
+    const n = humans.filter((p) => p.ready).length;
+    const mine = ready.has(net.me);
+    this.ui.again.setLabel(mine ? `ยกเลิก (${n}/${humans.length})` : `เล่นต่อ (${n}/${humans.length})`);
+    this.ui.countdown?.remove();
+    if (room.rematchAt) {
+      const tick = () => {
+        const s = Math.max(0, Math.ceil((room.rematchAt - Date.now() - net.clockOffset) / 1000));
+        this.ui.againNote.setText(`ทุกคนพร้อมแล้ว! เริ่มตาใหม่ใน ${s} วินาที...`).setColor(COLORS.gold);
+      };
+      tick();
+      sfx.ready();
+      this.ui.countdown = this.time.addEvent({ delay: 250, loop: true, callback: tick });
     } else {
-      this.note('รอเจ้าของห้องพากลับห้องรอ...', 334, COLORS.dim, 11).setX(150);
+      this.ui.againNote.setText(mine ? 'รอเพื่อน ๆ กดเล่นต่อ...' : room.players.length < 4 ? 'คนไม่ครบ 4 คน ต้องกลับห้องรอ' : '').setColor(COLORS.dim);
     }
-    this.phaseLayer.add(new Button(this, 290, 334, 'ออกจากห้อง', { w: 130, color: 'btn_red', icon: 'i_door', onClick: () => this.leave() }));
   }
 
   // ---------- ตายแล้ว: คัตซีนของเรา + ผีติดตามดูผู้เล่น ----------
