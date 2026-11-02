@@ -4,6 +4,7 @@ services:
     name: werewolf
     runtime: node
     plan: free
+    region: singapore # ใกล้ไทยที่สุด เล่นแล้วไม่หน่วง
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /health
