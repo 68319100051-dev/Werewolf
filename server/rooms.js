@@ -1,6 +1,8 @@
 // ระบบห้อง: สร้าง / เข้า / ออก / ตั้งค่า / แชท / หลุดแล้วกลับเข้า / เริ่มเกม
 const { Game, roleSetting, ROLES } = require('./game');
 const { iceServers } = require('./ice');
+const wallet = require('./wallet');
+const { BASE_SIZE, CATALOG } = require('./catalog');
 
 // จบเกมแล้วทุกคนกด "เล่นต่อ" ครบ: นับถอยหลังแล้วเริ่มตาใหม่เอง (เร่งได้ตอนทดสอบ)
 const REMATCH_MS = 5000 / Number(process.env.GAME_SPEED || 1);
@@ -8,18 +10,21 @@ const REMATCH_MS = 5000 / Number(process.env.GAME_SPEED || 1);
 // ตารางคะแนนสะสมของห้อง: ชนะ +3 รอดถึงจบ +1
 function recordScores(room) {
   const g = room.game;
-  if (!g || g.scored) return;
+  if (!g || g.scored) return {};
   g.scored = true;
   room.stats ||= { games: 0, players: {} };
   room.stats.games++;
+  const results = {};
   for (const p of g.players.values()) {
     const won = g.winner === 'jester' ? p.role === 'jester' : ROLES[p.role].team === g.winner;
+    results[p.id] = { won, alive: p.alive };
     const s = (room.stats.players[p.id] ||= { name: p.name, games: 0, wins: 0, points: 0 });
     s.name = p.name;
     s.games++;
     if (won) s.wins++;
     s.points += (won ? 3 : 0) + (p.alive ? 1 : 0);
   }
+  return results;
 }
 const { voicePlan } = require('./voice');
 const { Bot, botProfile } = require('./bots');
@@ -41,7 +46,10 @@ const DEFAULT_SETTINGS = {
     'gravedigger', 'farmer', 'woodcutter', 'cupid', 'wolf', 'shadow', 'traitor'].map((k) => [k, 'random'])),
 };
 
-const OUTFIT_LIMITS = { hat: 8, hair: 8, shirt: 8, item: 8, face: 5, skin: 5 };
+// ค่าสูงสุดของแต่ละส่วน = ชุดฟรี + ของกาชา (ของกาชาต้องมีในกระเป๋าถึงจะใส่ได้)
+const OUTFIT_LIMITS = Object.fromEntries(
+  Object.entries(BASE_SIZE).map(([k, n]) => [k, Math.max(n, ...CATALOG.filter((it) => it.part === k).map((it) => it.value + 1))]),
+);
 
 const rooms = new Map();    // code -> room
 const players = new Map();  // playerId -> { socketId, name, outfit, roomCode }
@@ -58,11 +66,16 @@ function cleanText(str, max) {
   return String(str ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
 }
 
-function cleanOutfit(o) {
+// ป้ายชื่อจากตู้กาชา (ต้องมีถึงจะใช้ได้ ไม่มี = ป้ายธรรมดา)
+function cleanPlate(key, w) {
+  return typeof key === 'string' && key && wallet.ownsPlate(w, key) ? key : null;
+}
+
+function cleanOutfit(o, w = null) {
   const out = {};
   for (const [k, n] of Object.entries(OUTFIT_LIMITS)) {
     const v = Number(o?.[k]);
-    out[k] = Number.isInteger(v) && v >= 0 && v < n ? v : 0;
+    out[k] = Number.isInteger(v) && v >= 0 && v < n && wallet.owns(w, k, v) ? v : 0;
   }
   return out;
 }
@@ -98,7 +111,7 @@ function publicRoom(room) {
     settings: room.settings,
     players: room.order.map((id) => {
       const p = room.members.get(id);
-      return { id, name: p.name, outfit: p.outfit, ready: p.ready, connected: p.connected, isBot: !!p.isBot };
+      return { id, name: p.name, outfit: p.outfit, plate: p.plate || null, ready: p.ready, connected: p.connected, isBot: !!p.isBot };
     }),
     chat: room.chat.slice(-50),
     stats: room.stats || null,
@@ -162,10 +175,10 @@ function attach(io) {
   }
 
   // อีโมต: ทำได้ในห้องรอ หรือในเกมช่วงที่คุยกันได้ทั้งหมู่บ้าน (ประชุม/โหวต/จบเกม)
-  const EMOTES = ['wave', 'laugh', 'angry', 'what', 'cry', 'shock', 'fire'];
   const lastEmote = new Map();
   function emote(room, playerId, key) {
-    if (!room || !EMOTES.includes(key)) return;
+    if (!room || typeof key !== 'string') return;
+    if (key !== 'fire' && !wallet.ownsEmote(players.get(playerId)?.wallet, key)) return;
     const now = Date.now();
     if (now - (lastEmote.get(playerId) || 0) < 700) return;
     if (key === 'fire' && room.game) return;
@@ -244,7 +257,14 @@ function attach(io) {
     room.game = new Game(room, {
       send: sendTo,
       onEnd: () => {
-        recordScores(room);
+        const results = recordScores(room);
+        // เหรียญรางวัลหลังจบเกม (เฉพาะคน ไม่รวมบอท)
+        for (const [id, r] of Object.entries(results)) {
+          const info = players.get(id);
+          if (!info?.wallet || room.members.get(id)?.isBot) continue;
+          const got = wallet.reward(info.wallet, r);
+          sendTo(id, 'wallet', wallet.view(info.wallet, { reward: got }));
+        }
         // ให้ทุกคน (ยกเว้นบอท) กด "เล่นต่อ" ใหม่
         for (const m of room.members.values()) m.ready = !!m.isBot;
         broadcastRoom(room);
@@ -284,7 +304,7 @@ function attach(io) {
   function joinRoom(socket, room, playerId) {
     const info = players.get(playerId);
     info.roomCode = room.code;
-    room.members.set(playerId, { name: info.name, outfit: info.outfit, ready: false, connected: true, dropTimer: null });
+    room.members.set(playerId, { name: info.name, outfit: info.outfit, plate: info.plate || null, ready: false, connected: true, dropTimer: null });
     room.order.push(playerId);
     socket.join('room:' + room.code);
     socket.leave('browser');
@@ -309,7 +329,8 @@ function attach(io) {
       if (!id || !name) return ack?.({ ok: false, error: 'ชื่อไม่ถูกต้อง' });
       playerId = id;
       const prev = players.get(id);
-      const info = { socketId: socket.id, name, outfit: cleanOutfit(data?.outfit), roomCode: prev?.roomCode || null };
+      const w = wallet.load(data?.wallet);
+      const info = { socketId: socket.id, name, wallet: w, outfit: cleanOutfit(data?.outfit, w), plate: cleanPlate(data?.plate, w), roomCode: prev?.roomCode || null };
       players.set(id, info);
 
       // กลับเข้าห้องเดิมหลังหลุด
@@ -320,26 +341,37 @@ function attach(io) {
         m.connected = true;
         m.name = name;
         m.outfit = info.outfit;
+        m.plate = info.plate;
         socket.join('room:' + room.code);
         broadcastRoom(room);
-        ack?.({ ok: true, rejoined: room.code, playing: room.status === 'playing' });
+        ack?.({ ok: true, rejoined: room.code, playing: room.status === 'playing', wallet: wallet.view(w) });
         room.game?.sync();
         return;
       }
       info.roomCode = null;
-      ack?.({ ok: true });
+      ack?.({ ok: true, wallet: wallet.view(w) });
+    });
+
+    // ตู้กาชา: เลือกตู้ แล้วหมุน 1 หรือ 10 ครั้ง
+    socket.on('gacha:roll', (data, ack) => {
+      const info = players.get(playerId);
+      if (!info?.wallet) return ack?.({ ok: false, error: 'ยังไม่ได้ล็อกอิน' });
+      const res = wallet.roll(info.wallet, String(data?.box), Number(data?.count));
+      ack?.({ ...res, wallet: wallet.view(info.wallet) });
     });
 
     socket.on('profile', (data) => {
       const info = players.get(playerId);
       if (!info) return;
       info.name = cleanText(data?.name, 16) || info.name;
-      info.outfit = cleanOutfit(data?.outfit);
+      info.outfit = cleanOutfit(data?.outfit, info.wallet);
+      info.plate = cleanPlate(data?.plate, info.wallet);
       const room = myRoom();
       if (room && room.status === 'lobby') {
         const m = room.members.get(playerId);
         m.name = info.name;
         m.outfit = info.outfit;
+        m.plate = info.plate;
         broadcastRoom(room);
       }
     });

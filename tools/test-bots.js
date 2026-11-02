@@ -25,6 +25,7 @@ function client(id) {
   s.call = (ev, data) => new Promise((res) => (data === undefined ? s.emit(ev, res) : s.emit(ev, data, res)));
   s.on('room:state', (r) => (s.room = r));
   s.on('game:state', (v) => (s.game = v));
+  s.on('wallet', (w) => (s.wallet = w));
   s.chat = [];
   s.on('room:chat', (m) => s.chat.push(m));
   s.on('game:chat', (m) => s.chat.push(m));
@@ -71,6 +72,7 @@ function client(id) {
   await wait(300);
   const st1 = host.room?.stats;
   check('จบเกมแล้วห้องบันทึกคะแนน', st1?.games === 1 && Object.values(st1.players).every((p) => p.games === 1), JSON.stringify(st1?.players?.h1 || {}));
+  check('จบเกมแล้วได้เหรียญรางวัล (ตาแรกของวันได้โบนัส)', host.wallet?.reward?.total >= 60 && host.wallet.coins >= 360, `+${host.wallet?.reward?.total} รวม ${host.wallet?.coins}`);
   check('จบเกมแล้วคนต้องกดเล่นต่อใหม่ บอทพร้อมเอง', !host.room.players.find((p) => p.id === 'h1').ready && host.room.players.filter((p) => p.isBot).every((b) => b.ready));
   host.emit('game:again');
   await wait(150);

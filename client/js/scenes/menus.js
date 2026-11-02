@@ -5,11 +5,14 @@ import { prefs } from '../prefs.js';
 import { music } from '../music.js';
 import { openGuide } from '../ui/guide.js';
 import { LOCATIONS } from '../data.js';
-import { addCharacter, setCharacterOutfit, OUTFIT_PARTS, PART_LABELS, randomOutfit, SKIN_ORDER } from '../art/character.js';
+import { BASE_SIZE, addCharacter, setCharacterOutfit, OUTFIT_PARTS, PART_LABELS, randomOutfit, SKIN_ORDER } from '../art/character.js';
 import { Button, Cycler, Toggle, txt, panel, domInput, staggerIn, go, toast, COLORS } from '../ui/widgets.js';
 import { dealHand, makeDeck } from '../ui/card.js';
 import { startMinigame } from '../ui/minigames.js';
 import '../ui/minigames2.js';
+import { wallet } from '../wallet.js';
+import { CATALOG } from '/catalog.js';
+import { plateStyle, plateDeco, paintPlate } from '../ui/plates.js';
 
 function campfire(scene, x, y, scale = 2) {
   const glow = scene.add.image(x, y - 10, 'glow').setScale(scale * 1.6).setBlendMode('ADD');
@@ -150,14 +153,24 @@ export class Menu extends Phaser.Scene {
       ['เล่นออนไลน์', 'i_play', 'btn_green', () => go(this, 'RoomList')],
       ['สร้างห้อง', 'i_plus', 'btn', () => go(this, 'CreateRoom')],
       ['แต่งตัว', 'i_shirt', 'btn', () => go(this, 'Wardrobe')],
+      ['ตู้กาชา', 'i_coin', 'btn_green', () => go(this, 'Gacha')],
       ['วิธีเล่น', 'i_book', 'btn', () => go(this, 'HowTo')],
       ['สมุดอาชีพ', 'i_user', 'btn', () => openGuide(this)],
       ['ตั้งค่า', 'i_gear', 'btn', () => go(this, 'Settings')],
       ['ออก', 'i_door', 'btn_dark', () => go(this, 'Title')],
     ];
     const buttons = items.map(([label, icon, color, onClick], i) =>
-      new Button(this, 480, 80 + i * 34, label, { w: 180, h: 28, icon, color, onClick }),
+      new Button(this, 480, 70 + i * 32, label, { w: 180, h: 26, icon, color, onClick }),
     );
+    // เหรียญที่มี (ได้จากการเล่นจบแต่ละตา)
+    const purse = this.add.container(170, 100);
+    purse.add(panel(this, 0, 0, 120, 22, 'panel_dark'));
+    purse.add(this.add.image(-46, 0, 'i_coin'));
+    const coinText = txt(this, 6, 0, `${wallet.coins} เหรียญ`, { size: 12, color: COLORS.gold });
+    purse.add(coinText);
+    const onWallet = () => coinText.active && coinText.setText(`${wallet.coins} เหรียญ`);
+    wallet.events.on('change', onWallet);
+    this.events.once('shutdown', () => wallet.events.off('change', onWallet));
     staggerIn(this, buttons, { dx: 80, dy: 0, delay: 70 });
     // มือถือ: ปุ่มสลับเต็มจอ (ถ้าเคยออกจากเต็มจอไปแล้ว)
     if (this.sys.game.device.input.touch) {
@@ -194,15 +207,21 @@ export class Wardrobe extends Phaser.Scene {
     right.add(txt(this, 0, -104, 'เลือกชุดของคุณ', { size: 14 }));
     this.cyclers = Object.keys(OUTFIT_PARTS).map((part, i) => {
       // สีผิวเรียงจากสว่างไปเข้ม
-      const order = part === 'skin' ? SKIN_ORDER : OUTFIT_PARTS[part].map((_, v) => v);
-      const opts = order.map((value) => ({ value, label: OUTFIT_PARTS[part][value] }));
-      const c = new Cycler(this, -130, -76 + i * 28, PART_LABELS[part], opts, this.outfit[part] ?? 0, (v) => this.change(part, v), 260);
+      // ชุดฟรีทุกคนใส่ได้ ของกาชาโชว์เฉพาะที่มีแล้ว
+      const order = part === 'skin' ? SKIN_ORDER : OUTFIT_PARTS[part].map((_, v) => v).filter((v) => wallet.owns(part, v));
+      const opts = order.map((value) => ({ value, label: (value >= BASE_SIZE[part] ? '★ ' : '') + OUTFIT_PARTS[part][value] }));
+      const c = new Cycler(this, -130, -82 + i * 27, PART_LABELS[part], opts, this.outfit[part] ?? 0, (v) => this.change(part, v), 260);
       right.add(c);
       return c;
     });
-    right.add(txt(this, 0, 98, 'ชุดของคุณคือเบาะแส! คนที่โดนทำร้ายอาจเห็นชุดของคนร้าย', {
-      size: 10, color: COLORS.dim, wrap: 270,
-    }));
+    // ป้ายชื่อ (ธรรมดา + ที่ได้จากตู้ป้ายชื่อ)
+    this.plate = net.profile.plate || null;
+    const plates = [{ value: null, label: 'ธรรมดา' }, ...CATALOG.filter((it) => it.kind === 'plate' && wallet.items.includes(it.id)).map((it) => ({ value: it.key, label: '★ ' + it.name }))];
+    if (!plates.some((o) => o.value === this.plate)) this.plate = null;
+    right.add(new Cycler(this, -130, 80, 'ป้ายชื่อ', plates, this.plate, (v) => this.changePlate(v), 260));
+    right.add(txt(this, 0, 101, 'ชุดของคุณคือเบาะแสในเกม! (ป้ายชื่อไม่ใช่)', { size: 10, color: COLORS.dim }));
+    this.platePreview = this.add.container(170, 308);
+    this.drawPlate();
 
     const dice = new Button(this, 370, 300, 'สุ่ม', { w: 100, icon: 'i_dice', onClick: () => this.randomize() });
     const save = new Button(this, 480, 300, 'บันทึก', { w: 110, color: 'btn_green', icon: 'i_check', onClick: () => this.save() });
@@ -214,6 +233,27 @@ export class Wardrobe extends Phaser.Scene {
     this.outfit[part] = v;
     sfx.cloth();
     this.refreshHero();
+  }
+
+  changePlate(v) {
+    this.plate = v;
+    sfx.cloth();
+    this.drawPlate();
+  }
+
+  drawPlate() {
+    const c = this.platePreview;
+    c.list.forEach((o) => this.tweens.killTweensOf(o));
+    c.removeAll(true);
+    const name = txt(this, 0, 0, net.profile.name || 'ชื่อของคุณ', { size: 10, color: COLORS.gold });
+    const w = name.width + 8;
+    const bg = this.add.rectangle(0, 0, w, 13);
+    const style = plateStyle(this.plate);
+    paintPlate(bg, style);
+    if (style) name.setColor(style.text);
+    c.add([bg, name]);
+    plateDeco(this, c, style, w, 13);
+    c.setScale(1.6);
   }
 
   refreshHero() {
@@ -244,6 +284,7 @@ export class Wardrobe extends Phaser.Scene {
 
   save() {
     net.profile.outfit = { ...this.outfit };
+    net.profile.plate = this.plate;
     net.saveProfile();
     sfx.success();
     toast(this, 'บันทึกชุดแล้ว', 'success');

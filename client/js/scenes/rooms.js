@@ -470,6 +470,7 @@ export class Lobby extends Phaser.Scene {
         a.seat = seatIdx;
       } else a.setOutfit(p.outfit);
       a.setName(p.name);
+      a.setPlate(p.plate);
       a.setCrown(p.id === room.hostId);
       a.setCheck(p.ready && p.id !== room.hostId);
       a.setConnected(p.connected);

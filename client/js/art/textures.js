@@ -40,6 +40,8 @@ function makeIcons(scene) {
     '..sss..', '.s...s.', '.s...s.', 'ggggggg', 'ggGGGgg', 'gggGggg', 'gggGggg', 'ggggggg',
   ], IP);
   icon(scene, 'i_crown', ['g...g...g', 'gg.ggg.gg', 'ggggggggg', 'grggrggrg', 'GGGGGGGGG'], IP);
+  // เหรียญ (เงินนอกเกม ใช้หมุนตู้กาชา)
+  icon(scene, 'i_coin', ['..ggg..', '.gwggg.', 'gwgGggg', 'ggGGGgg', 'gggGggG', '.gggGG.', '..GGG..'], IP);
   icon(scene, 'i_check', ['.......n', '......nn', 'n....nn.', 'nn..nn..', '.nnnn...', '..nn....'], IP);
   icon(scene, 'i_heart', ['.rr.rr.', 'rwrrrrr', 'rrrrrrr', '.rrrrr.', '..rrr..', '...r...'], IP);
   icon(scene, 'i_user', ['..www..', '.wwwww.', '.wwwww.', '..www..', '.......', '.wwwww.', 'wwwwwww', 'wwwwwww'], IP);

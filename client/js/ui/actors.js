@@ -1,6 +1,7 @@
 // ตัวละครในลานหมู่บ้าน + ป้ายชื่อใต้เท้า (ไอคอนอาชีพ ชื่อ หัวใจ อยู่แถวเดียวกัน ไม่ทับหัวใคร)
 import { addCharacter, ensureCharacter, outfitKey } from '../art/character.js';
 import { txt, fitText, COLORS } from './widgets.js';
+import { plateStyle, plateDeco, paintPlate } from './plates.js';
 import { sfx } from '../sfx.js';
 
 export class Actor {
@@ -29,6 +30,9 @@ export class Actor {
     this.hearts = [0, 1].map(() => scene.add.image(0, 0, 'i_heart').setScale(0.75).setVisible(false));
     this.check = scene.add.image(0, 0, 'i_check').setVisible(false);
     this.plate.add([this.plateBg, this.roleIcon, this.crown, this.name, ...this.hearts, this.check]);
+    this.isMe = isMe;
+    this.deco = [];
+    this.setPlate(p.plate);
 
     this.badge = scene.add.container(x, y - 70).setVisible(false);
     this.badge.add([
@@ -65,8 +69,25 @@ export class Actor {
       o.x = x + w / 2;
       x += w + gap;
     }
-    this.plateBg.width = total + 8;
+    this.plateBg.setSize(total + 8, 13);
+    // ลายประดับป้ายชื่อ (จากตู้กาชา) วาดใหม่ตามความกว้างป้าย
+    this.deco.forEach((o) => {
+      this.scene.tweens.killTweensOf(o);
+      o.destroy();
+    });
+    this.deco = plateDeco(this.scene, this.plate, plateStyle(this.plateKey), total + 8, 13);
     this.fitPlate();
+  }
+
+  // ป้ายชื่อจากตู้กาชา (null = ป้ายธรรมดา)
+  setPlate(key) {
+    key ||= null;
+    if (this.plateKey === key) return;
+    this.plateKey = key;
+    const style = plateStyle(key);
+    paintPlate(this.plateBg, style);
+    this.name.setColor(style ? style.text : this.isMe ? COLORS.gold : COLORS.text);
+    this.layout();
   }
 
   // ป้ายชื่อของคนที่นั่งชิดขอบจอ: เลื่อนเข้ามาไม่ให้ล้นจอ
@@ -246,6 +267,9 @@ export class Actor {
       sp.setTint(0xff9090);
       s.tweens.add({ targets: sp, x: this.x + 3, duration: 50, yoyo: true, repeat: 5, onComplete: () => sp.clearTint() });
     } else if (key === 'shock') s.tweens.add({ targets: sp, y: this.y - 14, duration: 140, yoyo: true, ease: 'Quad.Out' });
+    else if (key === 'party' || key === 'firework') s.tweens.add({ targets: sp, y: this.y - 8, angle: 6, duration: 130, yoyo: true, repeat: 3 });
+    else if (key === 'howl') s.tweens.add({ targets: sp, scaleY: sp.scaleY * 1.15, duration: 400, yoyo: true, ease: 'Sine.InOut' });
+    else if (key === 'zzz' || key === 'skull') s.tweens.add({ targets: sp, angle: key === 'skull' ? -12 : 6, duration: 500, yoyo: true, ease: 'Sine.InOut' });
     else if (key === 'cry') {
       for (let i = 0; i < 4; i++) {
         const t = s.add.rectangle(this.x + (i % 2 ? 6 : -6), this.y - 44, 2, 3, 0x7ab8ff).setDepth(9999);

@@ -1,6 +1,7 @@
 // การเชื่อมต่อกับเซิร์ฟเวอร์ และข้อมูลผู้เล่นของเรา
 import { prefs } from './prefs.js';
 import { DEFAULT_OUTFIT } from './art/character.js';
+import { wallet } from './wallet.js';
 
 // รหัสผู้เล่นแยกตามแท็บ: รีเฟรชแล้วยังเป็นคนเดิม (กลับเข้าห้องได้) แต่เปิดหลายแท็บก็เป็นคนละคน
 function tabPlayerId() {
@@ -33,12 +34,14 @@ export const net = {
     playerId: tabPlayerId(),
     name: prefs.get('name', ''),
     outfit: prefs.get('outfit', { ...DEFAULT_OUTFIT }),
+    plate: prefs.get('plate', null),
   },
 
   saveProfile() {
     prefs.set('name', this.profile.name);
     prefs.set('outfit', this.profile.outfit);
-    if (this.loggedIn) socket.emit('profile', { name: this.profile.name, outfit: this.profile.outfit });
+    prefs.set('plate', this.profile.plate);
+    if (this.loggedIn) socket.emit('profile', { name: this.profile.name, outfit: this.profile.outfit, plate: this.profile.plate });
   },
 
   call(event, data) {
@@ -52,8 +55,9 @@ export const net = {
   async login(name) {
     this.profile.name = name;
     this.saveProfile();
-    const res = await this.call('hello', this.profile);
+    const res = await this.call('hello', { ...this.profile, wallet: wallet.token });
     this.loggedIn = !!res.ok;
+    wallet.set(res.wallet);
     return res;
   },
 
@@ -85,6 +89,7 @@ socket.on('game:state', (v) => {
   events.emit('game', v);
 });
 socket.on('game:chase', (c) => events.emit('chase', c));
+socket.on('wallet', (w) => wallet.set(w));
 socket.on('game:chat', (msg) => events.emit('gchat', msg));
 socket.on('room:emote', (m) => events.emit('emote', m));
 socket.on('ghost:haunt', (m) => events.emit('haunt', m));
@@ -104,7 +109,8 @@ socket.on('connect', async () => {
   events.emit('connection', true);
   // เน็ตหลุดแล้วกลับมา: ล็อกอินซ้ำเพื่อกลับเข้าห้องเดิม
   if (net.loggedIn) {
-    const res = await net.call('hello', net.profile);
+    const res = await net.call('hello', { ...net.profile, wallet: wallet.token });
+    wallet.set(res.wallet);
     if (!res.rejoined && net.room) {
       net.room = null;
       events.emit('kicked');

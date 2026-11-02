@@ -1,5 +1,6 @@
 // เครื่องยนต์เกม: บทบาท / กลางวัน (การ์ด + ซุ่ม) / กลางคืน / ประชุม / โหวต / เงื่อนไขชนะ
 // เซิร์ฟเวอร์เป็นผู้ตัดสินทุกอย่าง ผู้เล่นแต่ละคนได้เห็นเฉพาะข้อมูลที่ตัวเองควรรู้
+const { CATALOG } = require('./catalog');
 
 const SPEED = Number(process.env.GAME_SPEED || 1); // ใช้เร่งเวลาตอนทดสอบ
 // ตัวเลขสมดุล (ปรับผ่าน env ได้ตอนจำลองเกมด้วย tools/sim.js)
@@ -58,6 +59,17 @@ const FACE = [
   'คนร้ายมีหนวดเฟิ้ม',
   'คนร้ายใช้ผ้าปิดปากไว้',
 ];
+// ของจากตู้กาชาต่อท้ายรายการเบาะแส (ใส่แล้วโดดเด่น โดนจับได้ง่ายกว่า)
+for (const it of CATALOG) {
+  if (it.part === 'hat') HAT[it.value] = it.clue;
+  if (it.part === 'item') ITEM[it.value] = it.clue;
+  if (it.part === 'face') FACE[it.value] = it.clue;
+  if (it.part === 'hair') HAIR[it.value] = it.color;
+  if (it.part === 'shirt') {
+    SHIRT[it.value] = it.color;
+    SHIRT_TONE[it.value] = it.tone;
+  }
+}
 
 // สถานการณ์ประจำวัน: สุ่มทุกเช้า แต่ละอันปรับกติกานิดเดียว
 const EVENTS = {
@@ -136,6 +148,7 @@ const PART_VALUE = {
   item: ['ไม่มี', 'กระเป๋า', 'ผ้าพันคอ', 'ไม้เท้า', 'ตะเกียง', 'ผ้าคลุม', 'ตะกร้า', 'สร้อยเขี้ยว'],
   face: ['ไม่มี', 'แว่นตา', 'ผ้าปิดตา', 'หนวด', 'ผ้าปิดปาก'],
 };
+for (const it of CATALOG) if (it.part === 'hat' || it.part === 'item' || it.part === 'face') PART_VALUE[it.part][it.value] = it.name;
 const OUTFIT_SIZE = { hat: 8, hair: 8, shirt: 8, item: 8, face: 5 };
 
 const EVENT_NAME = {
@@ -236,6 +249,7 @@ class Game {
         id,
         name: m.name,
         outfit: { ...m.outfit },
+        plate: m.plate || null,
         role: roles[id],
         alive: true,
         hp: 2,
@@ -1104,6 +1118,7 @@ class Game {
         id: p.id,
         name: p.name,
         outfit: p.outfit,
+        plate: p.plate,
         alive: p.alive,
         hp: p.hp,
         connected: this.room.members.get(p.id)?.connected ?? false,

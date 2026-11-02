@@ -2,7 +2,7 @@
 import { net } from '../net.js';
 import { sfx } from '../sfx.js';
 import { LOCATIONS, ROLES, TEAM_COLOR, EVENTS } from '../data.js';
-import { addCharacter, outfitKey, setCharacterOutfit, OUTFIT_PARTS, PART_LABELS } from '../art/character.js';
+import { addCharacter, outfitKey, setCharacterOutfit, OUTFIT_PARTS, PART_LABELS, BASE_SIZE } from '../art/character.js';
 import { buildSquare, buildFire, SEATS } from '../art/sets.js';
 import { Actor } from '../ui/actors.js';
 import { Button, Cycler, txt, fitText, stackBubble, panel, domInput, modal, go, toast, iconButton, COLORS } from '../ui/widgets.js';
@@ -17,6 +17,7 @@ import { Chase, ensureChaseTextures } from '../ui/chase.js';
 import { music } from '../music.js';
 import { openGuide, possibleRoles } from '../ui/guide.js';
 import { scoreBoard } from '../ui/scores.js';
+import { wallet } from '../wallet.js';
 import { playDeath } from '../ui/death.js';
 
 const PHASE_NAME = {
@@ -104,11 +105,15 @@ export class Game extends Phaser.Scene {
     const onEmote = ({ id, key }) => this.actorLayer.visible && this.actors.get(id)?.emote(key);
     const onHaunt = ({ kind }) => this.haunt(kind);
     const onChase = (c) => this.chaseUI?.update(c);
+    // เหรียญรางวัลหลังจบเกม (อาจมาถึงก่อนหรือหลังหน้าจบเกม)
+    const onWallet = (d) => d?.reward && this.state?.phase === 'ended' && this.showReward(d.reward);
+    wallet.events.on('change', onWallet);
     net.events.on('chase', onChase);
     net.events.on('emote', onEmote);
     net.events.on('haunt', onHaunt);
     this.events.once('shutdown', () => {
       net.events.off('chase', onChase);
+      wallet.events.off('change', onWallet);
       net.events.off('emote', onEmote);
       net.events.off('haunt', onHaunt);
       voice.events.off('talking', onTalk);
@@ -459,6 +464,7 @@ export class Game extends Phaser.Scene {
       a.hp = p.hp;
       a.setConnected(p.connected);
       a.setOutfit(p.outfit);
+      a.setPlate(p.plate);
       a.setRole(p.role ? ROLES[p.role].icon : null);
       a.setCheck(
         (v.phase === 'meeting' && (v.meetingReady || []).includes(p.id)) ||
@@ -1051,7 +1057,7 @@ export class Game extends Phaser.Scene {
     const parts = ['hat', 'hair', 'shirt', 'item', 'face'];
     let changed = []; // ส่วนที่เปลี่ยน เรียงจากเก่าไปใหม่
     const cyclers = parts.map((part, i) => {
-      const opts = OUTFIT_PARTS[part].map((label, value) => ({ value, label }));
+      const opts = OUTFIT_PARTS[part].map((label, value) => ({ value, label })).filter((o) => o.value < BASE_SIZE[part] || o.value === orig[part]);
       const c = new Cycler(this, -60, -52 + i * 26, PART_LABELS[part], opts, outfit[part] ?? 0, (v) => {
         outfit[part] = v;
         changed = changed.filter((q) => q !== part);
@@ -1635,6 +1641,25 @@ export class Game extends Phaser.Scene {
       this.tweens.add({ targets: this.ui.scores, alpha: 1, duration: 300 });
     });
     this.refreshEnded(net.room);
+    const r = wallet.lastReward;
+    if (r && Date.now() - r.at < 15000) this.later(1500, () => this.showReward(r));
+  }
+
+  // +เหรียญ ที่ได้จากตานี้ (เอาไปหมุนตู้กาชาที่เมนู)
+  showReward(r) {
+    if (this.ui.rewardShown || !this.ui.again) return;
+    this.ui.rewardShown = true;
+    const c = this.add.container(this.cx, 156);
+    const detail = r.parts.map(([label, n]) => `${label} +${n}`).join(' · ');
+    const t = txt(this, 8, -6, `+${r.total} เหรียญ`, { size: 16, color: COLORS.gold, bold: true });
+    const d = txt(this, 0, 12, detail, { size: 10, color: COLORS.dim });
+    const w = Math.max(t.width + 40, d.width + 20);
+    c.add([this.add.rectangle(0, 3, w, 40, 0x0b0a1a, 0.75), this.add.image(-t.width / 2 - 8, -6, 'i_coin').setScale(1.5), t, d]);
+    this.phaseLayer.add(c);
+    c.setScale(0);
+    this.tweens.add({ targets: c, scale: 1, duration: 300, ease: 'Back.Out' });
+    sfx.coin();
+    this.later(200, () => sfx.coin());
   }
 
   // หน้าจบเกม: เครื่องหมายถูกเหนือคนที่กดเล่นต่อ ปุ่ม และนับถอยหลัง

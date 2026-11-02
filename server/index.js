@@ -16,6 +16,12 @@ app.use((req, res, next) => {
 });
 // ให้เว็บตรวจสถานะ (Render / UptimeRobot) เรียกเช็กว่าเซิร์ฟเวอร์ยังทำงาน และกันเซิร์ฟเวอร์ฟรีหลับ
 app.get('/health', (req, res) => res.type('text').send('ok'));
+// รายการของกาชา (ต้นฉบับอยู่ฝั่งเซิร์ฟเวอร์) ส่งให้เบราว์เซอร์เป็นโมดูล
+const catalog = require('./catalog');
+const catalogModule = ['BASE_SIZE', 'RARITY', 'BOXES', 'CATALOG', 'BASE_EMOTES']
+  .map((k) => `export const ${k} = ${JSON.stringify(catalog[k])};\n`)
+  .join('');
+app.get('/catalog.js', (req, res) => res.type('application/javascript').send(catalogModule));
 app.use(express.static(path.join(__dirname, '..', 'client')));
 app.use('/lib/phaser', express.static(path.join(__dirname, '..', 'node_modules', 'phaser', 'dist')));
 

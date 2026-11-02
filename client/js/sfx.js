@@ -227,6 +227,25 @@ const EMOTE_SOUND = {
   fire: () => {
     for (let i = 0; i < 4; i++) noise({ dur: 0.04, vol: 0.1, from: 3000, to: 1200, q: 3, delay: i * 0.06 });
   },
+  // อีโมตจากตู้กาชา
+  love: () => [880, 1175].forEach((f, i) => tone({ freq: f, dur: 0.14, vol: 0.06, type: 'triangle', delay: i * 0.12 })),
+  zzz: () => wobble({ freq: 180, to: 140, dur: 0.9, vol: 0.05, rate: 3, depth: 12 }),
+  sus: () => tone({ freq: 700, to: 420, dur: 0.35, vol: 0.07, type: 'square' }),
+  sweat: () => tone({ freq: 1400, to: 600, dur: 0.12, vol: 0.06, type: 'sine' }),
+  cool: () => [523, 659, 784].forEach((f) => tone({ freq: f, dur: 0.3, vol: 0.04, type: 'triangle' })),
+  popcorn: () => {
+    for (let i = 0; i < 5; i++) noise({ dur: 0.03, vol: 0.09, from: 2500, to: 2000, q: 4, delay: i * 0.09 + Math.random() * 0.05 });
+  },
+  party: () => [523, 659, 784, 1046].forEach((f, i) => tone({ freq: f, dur: 0.1, vol: 0.06, type: 'square', delay: i * 0.08 })),
+  skull: () => {
+    tone({ freq: 120, to: 60, dur: 0.3, vol: 0.12, type: 'triangle' });
+    wobble({ freq: 300, to: 200, dur: 0.6, vol: 0.04, rate: 6, depth: 20, delay: 0.25 });
+  },
+  firework: () => {
+    tone({ freq: 400, to: 1600, dur: 0.35, vol: 0.05, type: 'sine' });
+    for (let i = 0; i < 6; i++) noise({ dur: 0.08, vol: 0.08, from: 4000, to: 800, q: 1, delay: 0.38 + i * 0.05 });
+  },
+  howl: () => wobble({ freq: 420, to: 680, dur: 1.2, vol: 0.06, rate: 5, depth: 18 }),
 };
 
 Object.assign(sfx, {
