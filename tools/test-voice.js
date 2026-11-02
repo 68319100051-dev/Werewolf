@@ -58,6 +58,7 @@ function client(i) {
   const j1 = await c[1].call('voice:join');
   check('คนแรกเข้าเสียง ยังไม่มีคนอื่น', j0.ok && j0.members.length === 0);
   check('คนที่สองได้รายชื่อคนที่อยู่ก่อน', j1.ok && j1.members.includes('v0'));
+  check('เข้าเสียงแล้วได้รายการเซิร์ฟเวอร์ช่วยต่อเสียง (STUN/TURN)', Array.isArray(j0.iceServers) && j0.iceServers.length > 0 && typeof j0.relay === 'boolean');
   for (const s of c.slice(2)) await s.call('voice:join');
   await wait(150);
   check('คนเก่าได้รับแจ้งเมื่อมีคนเข้าเสียง', c[0].peerEvents.filter((e) => e[0] === 'joined').length === 4);

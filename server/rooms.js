@@ -1,5 +1,6 @@
 // ระบบห้อง: สร้าง / เข้า / ออก / ตั้งค่า / แชท / หลุดแล้วกลับเข้า / เริ่มเกม
 const { Game, roleSetting, ROLES } = require('./game');
+const { iceServers } = require('./ice');
 
 // จบเกมแล้วทุกคนกด "เล่นต่อ" ครบ: นับถอยหลังแล้วเริ่มตาใหม่เอง (เร่งได้ตอนทดสอบ)
 const REMATCH_MS = 5000 / Number(process.env.GAME_SPEED || 1);
@@ -494,14 +495,17 @@ function attach(io) {
     });
 
     // ---------- เสียง ----------
-    socket.on('voice:join', (ack) => {
+    socket.on('voice:join', async (ack) => {
       const room = myRoom();
       if (!room) return ack?.({ ok: false, error: 'ยังไม่ได้อยู่ในห้อง' });
       if (room.settings.voiceMode === 'text') return ack?.({ ok: false, error: 'ห้องนี้ตั้งเป็นพิมพ์อย่างเดียว' });
+      // ขอเซิร์ฟเวอร์ช่วยต่อเสียงก่อน (ต่อข้ามเน็ตได้) แล้วค่อยเข้าระบบเสียง
+      const ice = await iceServers();
+      if (myRoom() !== room) return ack?.({ ok: false, error: 'ออกจากห้องไปแล้ว' });
       const others = [...room.voice].filter((id) => id !== playerId);
       room.voice.add(playerId);
       for (const id of others) sendTo(id, 'voice:peer-joined', { id: playerId });
-      ack?.({ ok: true, members: others });
+      ack?.({ ok: true, members: others, ...ice });
       syncVoice(room);
     });
 

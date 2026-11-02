@@ -9,3 +9,5 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
+    # ไมค์ข้ามเน็ต: ใส่ CF_TURN_KEY_ID และ CF_TURN_KEY_TOKEN ในหน้า Environment ของเซอร์วิสบน Render เอง
+    # (ไม่ใส่ = ใช้ STUN อย่างเดียว ดูรายละเอียดใน server/ice.js)

@@ -1,5 +1,6 @@
 // ปุ่มไมค์: เปิด/ปิดระบบเสียง + ปุ่มกดค้างเพื่อพูด
 import { voice } from '../voice.js';
+import { net } from '../net.js';
 import { sfx } from '../sfx.js';
 import { Button, txt, toast, COLORS } from './widgets.js';
 
@@ -18,8 +19,15 @@ export class MicControl {
 
     this.onChange = () => this.refresh();
     voice.events.on('change', this.onChange);
+    // ต่อเสียงกับใครไม่ติดจริง ๆ (ลองใหม่ครบแล้ว) บอกชื่อให้รู้ จะได้ไม่งงว่าทำไมไม่ได้ยิน
+    this.onFail = (id) => {
+      const name = net.room?.players.find((p) => p.id === id)?.name || 'เพื่อน';
+      toast(scene, `ต่อเสียงกับ ${name} ไม่ติด (เน็ตอาจบล็อก) ใช้แชทแทนก่อนนะ`, 'error');
+    };
+    voice.events.on('linkfail', this.onFail);
     scene.events.once('shutdown', () => {
       voice.events.off('change', this.onChange);
+      voice.events.off('linkfail', this.onFail);
       voice.setHolding(false);
     });
     this.refresh();
@@ -48,7 +56,9 @@ export class MicControl {
     if (!this.toggle.active) return;
     const j = voice.joined;
     const canSpeak = j && voice.state.canSpeak && !voice.listenOnly;
-    this.dot.setFillStyle(!j ? 0x6a6478 : canSpeak ? 0x7ac870 : 0xe8b84a);
+    // จุดสีส้ม = มีบางคนต่อเสียงไม่ติด
+    const failed = j && voice.failedLinks.length > 0;
+    this.dot.setFillStyle(!j ? 0x6a6478 : failed ? 0xe07a3a : canSpeak ? 0x7ac870 : 0xe8b84a);
     this.slash.setVisible(!j || voice.state.off);
     const showHold = canSpeak && voice.pushToTalk;
     this.hold.setVisible(showHold);

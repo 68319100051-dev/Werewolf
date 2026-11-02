@@ -18,6 +18,7 @@ npm start
 2. ได้ลิงก์ `https://<ชื่อ>.onrender.com` ส่งให้เพื่อนได้เลย (https จึงใช้ไมค์ได้)
 3. แบบฟรีจะหลับถ้าไม่มีใครเข้า 15 นาที: ตั้ง [UptimeRobot](https://uptimerobot.com) หรือ [cron-job.org](https://cron-job.org) ให้เปิด `https://<ชื่อ>.onrender.com/health` ทุก 10 นาที
 4. push ขึ้น `main` เมื่อไหร่ Render อัปเดตเกมให้เอง
+5. ไมค์ข้ามเน็ต (TURN): สร้าง TURN key ที่ Cloudflare Dashboard > Realtime/Calls > TURN แล้วใส่ `CF_TURN_KEY_ID` กับ `CF_TURN_KEY_TOKEN` ในหน้า Environment ของเซอร์วิสบน Render (หรือใช้ TURN เจ้าอื่น: `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL`) ทดสอบได้โดยเปิดเกมด้วย `?relay=1` (บังคับส่งเสียงผ่าน TURN อย่างเดียว)
 
 ## ทดสอบ
 
@@ -25,6 +26,7 @@ npm start
 - `node tools/bots.js <รหัสห้อง> [จำนวน] [รหัสผ่าน]` ส่งบอทเข้าห้อง บอทจะกดพร้อมและเล่นเกมเอง เอาไว้ลองเล่นคนเดียว
 - `node tools/sim.js [จำนวนเกม]` จำลองเกมเต็ม ๆ ด้วยบอทแบบเร่งเวลา เพื่อหาบั๊ก
 - `node tools/test-voice.js` ทดสอบสิทธิ์เสียง (ใครพูดได้/ได้ยินใคร) ทุกเฟส
+- `node tools/test-ice.js` ทดสอบการขอเซิร์ฟเวอร์ช่วยต่อเสียง (STUN/TURN) แบบจำลอง ไม่ต้องมีคีย์จริง
 - `node tools/test-bots.js` ทดสอบบอทในห้อง (เพิ่ม/เอาออก/เล่นจนจบเกม)
 - `node tools/test-roles.js` ทดสอบความสามารถของอาชีพใหม่แบบจัดสถานการณ์
 - ในเกม เจ้าของห้องกด "เพิ่มบอท" ในห้องรอได้เลย บอทจะกดพร้อมและเล่นเอง

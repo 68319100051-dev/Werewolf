@@ -3,7 +3,13 @@
 import { net } from './net.js';
 import { prefs } from './prefs.js';
 
-const ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
+// ค่าเริ่มต้นถ้าเซิร์ฟเวอร์ไม่ได้ส่งมา (เซิร์ฟเวอร์จะส่ง TURN มาด้วยถ้าตั้งค่าไว้ ต่อข้ามเน็ตได้)
+const ICE = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+// ทดสอบว่า TURN ใช้ได้จริง: เปิดเว็บด้วย ?relay=1 จะบังคับส่งเสียงผ่าน TURN อย่างเดียว
+const FORCE_RELAY = new URLSearchParams(location.search).has('relay');
+const MAX_RETRY = 2;
+// ต่อไม่ติดบางแบบเบราว์เซอร์ค้างอยู่ที่ "กำลังเชื่อมต่อ" ไม่ยอมบอกว่าล้มเหลว: เกินเวลานี้ถือว่าไม่ติด
+const CONNECT_TIMEOUT = 10000;
 const TALK_LEVEL = 0.035;
 const events = new Phaser.Events.EventEmitter();
 
@@ -49,6 +55,11 @@ export const voice = {
   stream: null,
   local: null,
   peers: new Map(),
+  ice: ICE,
+  relay: false,
+  // สถานะการต่อเสียงกับแต่ละคน: connecting / ok / failed (ลองใหม่ครบแล้วยังไม่ติด)
+  links: new Map(),
+  retries: new Map(),
   state: { canSpeak: false, hear: [], off: false },
   holding: false,
   talking: new Map(),
@@ -82,6 +93,8 @@ export const voice = {
       if (this.stream && !this.local) this.local = makeAnalyser(this.stream);
       const res = await net.call('voice:join');
       if (!res.ok) return res;
+      this.ice = res.iceServers?.length ? res.iceServers : ICE;
+      this.relay = !!res.relay;
       this.joined = true;
       this.applyTrack();
       // คนที่เข้ามาใหม่เป็นฝ่ายเริ่มเชื่อมต่อกับทุกคนที่อยู่ก่อน (กันชนกันสองฝั่ง)
@@ -106,11 +119,14 @@ export const voice = {
 
   closeAll() {
     for (const id of [...this.peers.keys()]) this.drop(id);
+    this.links.clear();
+    this.retries.clear();
   },
 
   drop(id) {
     const p = this.peers.get(id);
     if (!p) return;
+    clearTimeout(p.timer);
     p.pc.close();
     p.audio?.remove();
     this.peers.delete(id);
@@ -119,9 +135,13 @@ export const voice = {
 
   connect(id, initiator) {
     this.drop(id);
-    const pc = new RTCPeerConnection({ iceServers: ICE });
+    const pc = new RTCPeerConnection({ iceServers: this.ice, iceTransportPolicy: FORCE_RELAY ? 'relay' : 'all' });
     const peer = { pc, audio: null, analyser: null, pending: [] };
     this.peers.set(id, peer);
+    this.setLink(id, 'connecting');
+    peer.timer = setTimeout(() => {
+      if (this.peers.get(id)?.pc === pc && pc.connectionState !== 'connected') this.retry(id);
+    }, CONNECT_TIMEOUT);
     if (this.stream) this.stream.getTracks().forEach((t) => pc.addTrack(t, this.stream));
     else pc.addTransceiver('audio', { direction: 'recvonly' });
     pc.onicecandidate = (e) => e.candidate && net.socket.emit('voice:signal', { to: id, data: { candidate: e.candidate } });
@@ -136,7 +156,11 @@ export const voice = {
       peer.analyser = makeAnalyser(e.streams[0]);
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') this.drop(id);
+      if (this.peers.get(id)?.pc !== pc) return;
+      if (pc.connectionState === 'connected') {
+        this.retries.delete(id);
+        this.setLink(id, 'ok');
+      } else if (pc.connectionState === 'failed') this.retry(id);
     };
     if (initiator) {
       (async () => {
@@ -145,6 +169,30 @@ export const voice = {
       })().catch(() => this.drop(id));
     }
     return peer;
+  },
+
+  // ต่อไม่ติด: ลองใหม่ไม่เกิน MAX_RETRY ครั้ง ให้ฝั่งที่ไอดีน้อยกว่าเป็นคนเริ่ม (อีกฝั่งรอรับ กันชนกัน)
+  retry(id) {
+    this.drop(id);
+    const n = (this.retries.get(id) || 0) + 1;
+    this.retries.set(id, n);
+    if (n > MAX_RETRY) {
+      this.setLink(id, 'failed');
+      events.emit('linkfail', id);
+      return;
+    }
+    this.setLink(id, 'connecting');
+    if (String(net.me) < String(id)) setTimeout(() => this.joined && !this.peers.has(id) && this.connect(id, true), 800 * n);
+  },
+
+  setLink(id, s) {
+    if (this.links.get(id) === s) return;
+    this.links.set(id, s);
+    events.emit('change');
+  },
+
+  get failedLinks() {
+    return [...this.links].filter(([, s]) => s === 'failed').map(([id]) => id);
   },
 
   async onSignal({ from, data }) {
@@ -209,7 +257,12 @@ export const voice = {
 net.socket.on('voice:signal', (m) => voice.onSignal(m));
 net.socket.on('voice:state', (s) => voice.onState(s));
 net.socket.on('voice:peer-joined', () => events.emit('change'));
-net.socket.on('voice:peer-left', ({ id }) => voice.drop(id));
+net.socket.on('voice:peer-left', ({ id }) => {
+  voice.drop(id);
+  voice.links.delete(id);
+  voice.retries.delete(id);
+  events.emit('change');
+});
 net.events.on('kicked', () => voice.leave());
 // เน็ตหลุดแล้วกลับมา: เข้าระบบเสียงใหม่อัตโนมัติ
 net.events.on('connection', (ok) => {
